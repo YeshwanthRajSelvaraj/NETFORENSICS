@@ -1,0 +1,160 @@
+# NetForensics v3 — Enterprise Docker Compose Stack
+# ====================================================
+# Usage: docker compose -f docker-compose.enterprise.yml up -d
+#
+# Stack includes:
+#   • Backend API (FastAPI + all engines)
+#   • Frontend (React dashboard)
+#   • PostgreSQL (primary database)
+#   • Redis (caching, streaming, alert queue)
+#   • TimescaleDB (time-series for flow data) — optional
+#   • Elasticsearch (search/analytics) — optional
+#
+# Requirements:
+#   • Docker Engine 24+
+#   • Docker Compose v2
+#   • Minimum 8GB RAM, recommended 16GB
+#   • NET_RAW capability for packet capture
+
+services:
+  # ── Backend API ─────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nf-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - NF_DB=postgresql://netforensics:nf_secure_pass_2024@postgres:5432/netforensics
+      - NF_REDIS_URL=redis://redis:6379/0
+      - NF_LOG_LEVEL=INFO
+      - NF_WORKERS=4
+      - NF_ENTERPRISE=true
+      - NF_ML_ENABLED=true
+      - NF_TOR_SYNC=true
+      - NF_THREAT_INTEL=true
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend:/app
+      - pcap_data:/app/pcap_data
+      - ml_models:/app/ml_models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Frontend Dashboard ──────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nf-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_WS_URL=ws://localhost:8000/ws
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: nf-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: netforensics
+      POSTGRES_USER: netforensics
+      POSTGRES_PASSWORD: nf_secure_pass_2024
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./backend/database/schema_v3.sql:/docker-entrypoint-initdb.d/02_schema_v3.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netforensics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    shm_size: 256mb
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=64MB"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "log_min_duration_statement=1000"
+
+  # ── Redis (Caching + Streaming) ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: nf-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Elasticsearch (optional, for full-text search and analytics) ────────────
+  # Uncomment to enable
+  # elasticsearch:
+  #   image: elasticsearch:8.12.1
+  #   container_name: nf-elasticsearch
+  #   ports:
+  #     - "9200:9200"
+  #   environment:
+  #     - discovery.type=single-node
+  #     - ES_JAVA_OPTS=-Xms1g -Xmx1g
+  #     - xpack.security.enabled=false
+  #   volumes:
+  #     - es_data:/usr/share/elasticsearch/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pcap_data:
+    driver: local
+  ml_models:
+    driver: local
+  # es_data:
+  #   driver: local
+
+networks:
+  default:
+    name: netforensics-net
+    driver: bridge

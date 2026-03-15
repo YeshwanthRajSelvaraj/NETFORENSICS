@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend:ro
+      - nf_uploads:/tmp/nf_uploads
+      - nf_db:/tmp
+    environment:
+      - NF_DB=/tmp/netforensics.db
+    cap_add:
+      - NET_RAW           # Required for live packet capture
+    network_mode: host    # Required for AF_PACKET
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  nf_uploads:
+  nf_db:

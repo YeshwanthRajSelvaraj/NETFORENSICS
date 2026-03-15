@@ -1,0 +1,15 @@
+node_modules/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+dist/
+build/
+*.pcap
+*.pcapng
+netforensics.db
+*.sqlite3
+venv/
+env/
+.idea
+.vscode/

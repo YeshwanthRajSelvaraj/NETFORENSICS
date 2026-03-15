@@ -1,0 +1,17 @@
+# ── Core ──────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+aiosqlite==0.20.0
+python-multipart==0.0.9
+aiofiles==23.2.1
+
+# ── Enterprise (v3) ──────────────────────────────────────
+asyncpg==0.29.0            # PostgreSQL async driver
+aiohttp==3.10.0            # Async HTTP (threat intel feeds, Tor sync)
+redis[hiredis]==5.0.0      # Redis caching & streaming
+
+# ── Optional (enable for production) ─────────────────────
+# sqlalchemy[asyncio]==2.0.36
+# psycopg2-binary==2.9.9   # Sync PostgreSQL alternative
+# celery==5.3.6            # Distributed task queue
+# elasticsearch[async]==8.12.0  # Elasticsearch integration
